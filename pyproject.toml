@@ -2,7 +2,7 @@
 name = "mkdocs-semantic-search"
 version = "0.1.0"
 description = "MkDocs plugin for semantic search using transformers.js"
-authors = ["Nigel Harsch nigelharsch@gmail.com"]
+authors = ["Your Name <your.email@example.com>"]
 packages = [{ include = "mkdocs_semantic_search" }]
 
 [tool.poetry.dependencies]
