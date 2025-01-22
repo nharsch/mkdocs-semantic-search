@@ -1,20 +1,28 @@
 document.addEventListener('DOMContentLoaded', async function() {
-    if (!window.semanticSearch?.enabled) {
-        return;
-    }
+    // TODO: where do I set this?
+    // if (!window.semanticSearch?.enabled) {
+    //     return;
+    // }
 
     // Load the embeddings
-    const response = await fetch(`/js/${window.semanticSearch.embedding_file}`);
+    // TODO: load or template in embeddings
+    const response = await fetch(`/semantic-search/embeddings.json`);
     const embeddings = await response.json();
+    console.log("embeddings: ", embeddings)
 
     // Import transformers.js and initialize the model
-    const { pipeline } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.14.0/+esm');
+    // TODO: can / should we install this and load it in
+    const { pipeline } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.2');
+    console.log("pipeline: ", pipeline)
 
     const embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
         quantized: false
     });
 
+    console.log("embedder: ", embedder)
+
     // Add the search UI
+    console.log("mounting search field")
     const searchContainer = document.createElement('div');
     searchContainer.innerHTML = `
         <div class="semantic-search">
@@ -51,14 +59,17 @@ document.addEventListener('DOMContentLoaded', async function() {
             .sort((a, b) => b.similarity - a.similarity)
             .slice(0, 5);
 
+
         // Display results
         resultsContainer.innerHTML = results
-            .map(result => `
-                <a href="/${result.path}" class="search-result">
+            .map(result => {
+               // TODO: remove this hacky solution
+               const htmlPath = result.path.replace(".md", ".html");
+               return `<a href="/${htmlPath}" class="search-result">
                     <div>${result.path}</div>
                     <div>Score: ${result.similarity.toFixed(2)}</div>
-                </a>
-            `)
+                </a>`
+            })
             .join('');
     });
 });
