@@ -17,36 +17,90 @@ class DocEmbeddingsGenerator {
         });
     }
 
-    extractTextFromMarkdown(content) {
+    extractSections(content) {
+        const sections = [];
+        let currentHeader = null;
+        let currentContent = [];
+
+        const tokens = marked.lexer(content);
+
+        tokens.forEach(token => {
+            if (token.type === 'heading') {
+                // Save previous section if exists
+                if (currentHeader && currentContent.length) {
+                    sections.push({
+                        header: currentHeader,
+                        content: this.cleanText(currentContent.join('\n'))
+                    });
+                    currentContent = [];
+                }
+
+                // Start new section
+                currentHeader = token.text;
+            } else if (currentHeader) {
+                // Add token to current section
+                currentContent.push(marked.parser([token]));
+            }
+        });
+
+        // Add last section
+        if (currentHeader && currentContent.length) {
+            sections.push({
+                header: currentHeader,
+                content: this.cleanText(currentContent.join('\n'))
+            });
+        }
+
+        return sections;
+    }
+
+    async embeddContent(content) {
+        return await this.embedder(content, {
+            pooling: 'mean',
+            normalize: true
+        });
+    }
+
+    cleanText(text) {
+        return text
+            .replace(/<[^>]*>/g, '') // Remove HTML tags
+            .replace(/\s+/g, ' ') // Normalize whitespace
+            .trim();
+    }
+
+    async embeddSections(content) {
         // Remove frontmatter
         const { body } = frontMatter(content);
-        
-        // Convert markdown to plain text
-        const text = marked.parse(body, { mangle: false, headerIds: false });
-        
+
+        // Extract sections
+        const sections = this.extractSections(body);
+
+        for (const section of sections) {
+            const text = this.cleanText(section.content);
+            // Skip empty sections
+            if (!text || text.length < 5) {
+                // console.log('skipping short section:', text);
+                continue;
+            }
+            // cast Float32Array to Array to help with serialization
+            const embedding = await this.embeddContent(text);
+            section.embedding = Array.from(embedding.data);
+        }
+
         // Remove HTML tags and normalize whitespace
-        return text
-            .replace(/<[^>]*>/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim();
+        return sections;
     }
 
     async processDocument(filePath, docsDir) {
         const content = await fs.readFile(filePath, 'utf-8');
-        const text = this.extractTextFromMarkdown(content);
-        
-        // Generate embedding
-        const output = await this.embedder(text, {
-            pooling: 'mean',
-            normalize: true
-        });
-        
+        const embeddedSections = await this.embeddSections(content);
+
         // Get relative path from docs directory
         const relativePath = path.relative(docsDir, filePath);
         
         return {
             path: relativePath,
-            embedding: Array.from(output.data)
+            embeddings: embeddedSections
         };
     }
 
@@ -64,10 +118,11 @@ class DocEmbeddingsGenerator {
         // Process each file
         for (const file of files) {
             console.log(`Processing ${file}`);
-            const { path, embedding } = await this.processDocument(file, docsDir);
-            embeddings[path] = embedding;
-        }
+            // generate embedding for each section of the markdown file
 
+            const { path, embeddings: sectionEmbeddings } = await this.processDocument(file, docsDir);
+            embeddings[path] = sectionEmbeddings;
+        }
         return embeddings;
     }
 

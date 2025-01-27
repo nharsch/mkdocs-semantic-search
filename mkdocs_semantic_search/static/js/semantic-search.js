@@ -24,6 +24,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Add the search UI
     console.log("mounting search field")
     const searchContainer = document.createElement('div');
+
+    // TODO: add to regular search bar
     searchContainer.innerHTML = `
         <div class="semantic-search">
             <input type="text" placeholder="Search..." id="semantic-search-input">
@@ -37,7 +39,11 @@ document.addEventListener('DOMContentLoaded', async function() {
     const searchInput = document.getElementById('semantic-search-input');
     const resultsContainer = document.getElementById('semantic-search-results');
 
-    searchInput.addEventListener('input', async function(e) {
+    searchInput.addEventListener('keydown', async function(e) {
+        if (e.key !== 'Enter') {
+            return;
+        }
+
         const query = e.target.value;
         if (!query) {
             resultsContainer.innerHTML = '';
@@ -52,12 +58,23 @@ document.addEventListener('DOMContentLoaded', async function() {
 
         // Compute similarities and sort results
         const results = Object.entries(embeddings)
-            .map(([path, embedding]) => ({
-                path,
-                similarity: cosineSimilarity(queryEmbedding.data, embedding)
-            }))
-            .sort((a, b) => b.similarity - a.similarity)
-            .slice(0, 5);
+        // embeddings is a list of { header, content, embedding }
+              .flatMap(([path, sections]) => {
+                  return sections.filter(section => !!section.embedding)
+                                 .map((section) => {
+                                     console.log("section: ", path, section.header);
+                                     console.log("queryEmbedding: ", queryEmbedding.data)
+                                     console.log("section.embedding: ", section.embedding)
+                                     return {
+                                         path: path,
+                                         header: section.header,
+                                         content: section.content,
+                                         similarity: cosineSimilarity(queryEmbedding.data, section.embedding)
+                                     }
+                                 })
+              })
+              .sort((a, b) => b.similarity - a.similarity)
+              .slice(0, 5);
 
 
         // Display results
@@ -65,8 +82,11 @@ document.addEventListener('DOMContentLoaded', async function() {
             .map(result => {
                // TODO: remove this hacky solution
                const htmlPath = result.path.replace(".md", ".html");
-               return `<a href="/${htmlPath}" class="search-result">
+               const header = slugify(result.header)
+               const fullPath = `${htmlPath}#${header}`;
+                return `<a href="/${fullPath}" class="search-result">
                     <div>${result.path}</div>
+                    <div>${result.header}</div>
                     <div>Score: ${result.similarity.toFixed(2)}</div>
                 </a>`
             })
@@ -79,4 +99,13 @@ function cosineSimilarity(a, b) {
     const magnitudeA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0));
     const magnitudeB = Math.sqrt(b.reduce((sum, val) => sum + val * val, 0));
     return dotProduct / (magnitudeA * magnitudeB);
+}
+
+function slugify(str) {
+  str = str.replace(/^\s+|\s+$/g, ''); // trim leading/trailing white space
+  str = str.toLowerCase(); // convert string to lowercase
+  str = str.replace(/[^a-z0-9 -]/g, '') // remove any non-alphanumeric characters
+           .replace(/\s+/g, '-') // replace spaces with hyphens
+           .replace(/-+/g, '-'); // remove consecutive hyphens
+  return str;
 }
