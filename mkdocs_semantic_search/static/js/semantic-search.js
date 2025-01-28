@@ -1,104 +1,141 @@
 document.addEventListener('DOMContentLoaded', async function() {
-    // TODO: where do I set this?
-    // if (!window.semanticSearch?.enabled) {
-    //     return;
-    // }
+  // Load the embeddings
+  // TODO: load or template in embeddings
+  const response = await fetch(`/semantic-search/embeddings.json`);
+  const embeddings = await response.json();
+  console.log("embeddings: ", embeddings)
 
-    // Load the embeddings
-    // TODO: load or template in embeddings
-    const response = await fetch(`/semantic-search/embeddings.json`);
-    const embeddings = await response.json();
-    console.log("embeddings: ", embeddings)
+  // Import transformers.js and initialize the model
+  // TODO: can / should we install this and load it in
+  const { pipeline } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.2');
+  // console.log("pipeline: ", pipeline)
 
-    // Import transformers.js and initialize the model
-    // TODO: can / should we install this and load it in
-    const { pipeline } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.2');
-    console.log("pipeline: ", pipeline)
+  const embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
+    quantized: false
+  });
 
-    const embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
-        quantized: false
-    });
+  console.log("embedder: ", embedder)
 
-    console.log("embedder: ", embedder)
 
-    // Add the search UI
-    console.log("mounting search field")
-    const searchContainer = document.createElement('div');
-
-    // TODO: add to regular search bar
-    searchContainer.innerHTML = `
-        <div class="semantic-search">
-            <input type="text" placeholder="Search..." id="semantic-search-input">
-            <div id="semantic-search-results"></div>
-        </div>
+  // Add the toggle switch next to the search box
+  const navBar = document.querySelector('.md-header__inner');
+  const searchContainer = document.querySelector('.md-search');
+  const toggleSwitch = document.createElement('div');
+  toggleSwitch.innerHTML = `
+        <label class="md-switch">
+            <span class="md-switch__thumb">
+                <span class="md-switch__track">AI Powered Search</span>
+            </span>
+            <input type="checkbox" id="semantic-search-toggle">
+        </label>
     `;
+  navBar.insertBefore(toggleSwitch, searchContainer);
 
-    document.querySelector('.md-header__inner').appendChild(searchContainer);
+  // Intercept the search input
+  const searchInput = document.querySelector('.md-search__input');
+  let isSemanticSearch = false;
 
-    // Add search functionality
-    const searchInput = document.getElementById('semantic-search-input');
-    const resultsContainer = document.getElementById('semantic-search-results');
+  // Add the event listener for the toggle switch
+  document.getElementById('semantic-search-toggle').addEventListener('change', (e) => {
+    isSemanticSearch = e.target.checked;
+    console.log("toggle switch changed, isSemanticSearch: ", isSemanticSearch);
+  });
 
-    searchInput.addEventListener('keydown', async function(e) {
-        if (e.key !== 'Enter') {
-            return;
-        }
-
-        const query = e.target.value;
-        if (!query) {
-            resultsContainer.innerHTML = '';
-            return;
-        }
-
-        // Generate embedding for the query
-        const queryEmbedding = await embedder(query, {
-            pooling: 'mean',
-            normalize: true
-        });
-
-        // Compute similarities and sort results
-        const results = Object.entries(embeddings)
-        // embeddings is a list of { header, content, embedding }
-              .flatMap(([path, sections]) => {
-                  return sections.filter(section => !!section.embedding)
-                                 .map((section) => {
-                                     console.log("section: ", path, section.header);
-                                     console.log("queryEmbedding: ", queryEmbedding.data)
-                                     console.log("section.embedding: ", section.embedding)
-                                     return {
-                                         path: path,
-                                         header: section.header,
-                                         content: section.content,
-                                         similarity: cosineSimilarity(queryEmbedding.data, section.embedding)
-                                     }
-                                 })
-              })
-              .sort((a, b) => b.similarity - a.similarity)
-              .slice(0, 5);
+  // TODO: implement debounce on search results
+  // const debounce = (func, wait) => {
+  //   let timeout;
+  //   return function executedFunction(...args) {
+  //     const later = () => {
+  //       clearTimeout(timeout);
+  //       func(...args);
+  //     };
+  //     clearTimeout(timeout);
+  //     timeout = setTimeout(later, wait);
+  //   };
+  // };
 
 
-        // Display results
-        resultsContainer.innerHTML = results
-            .map(result => {
-               // TODO: remove this hacky solution
-               const htmlPath = result.path.replace(".md", ".html");
-               const header = slugify(result.header)
-               const fullPath = `${htmlPath}#${header}`;
-                return `<a href="/${fullPath}" class="search-result">
-                    <div>${result.path}</div>
-                    <div>${result.header}</div>
-                    <div>Score: ${result.similarity.toFixed(2)}</div>
-                </a>`
-            })
-            .join('');
+  // hijack the search input event
+  searchInput.addEventListener('input', async function(e) {
+    if (!isSemanticSearch) {
+      // Let the default search handle it
+      console.log("semantic search not enabled, will use default search")
+      return;
+    }
+
+    console.log("semantic search input event");
+
+    // Clear default search results
+    const defaultResults = document.querySelector('.md-search-result');
+    if (defaultResults) {
+      defaultResults.innerHTML = '<div class="md-search-result__meta"></div><ol class="md-search-result__list" role="list"></ol>';
+    }
+
+    // Show semantic search results
+    let resultsContainer = document.querySelector('.md-search-result__list');
+
+    const query = e.target.value;
+    if (!query) {
+      resultsContainer.innerHTML = '';
+      return;
+    }
+
+    // Generate embedding for the query
+    const queryEmbedding = await embedder(query, {
+      pooling: 'mean',
+      normalize: true
     });
+
+    // Compute similarities and sort results
+    const results = Object.entries(embeddings)
+    // embeddings is a list of { header, content, embedding }
+          .flatMap(([path, sections]) => {
+            return sections.filter(section => !!section.embedding)
+                           .map((section) => {
+                             return {
+                               path: path,
+                               header: section.header,
+                               content: section.content,
+                               similarity: cosineSimilarity(queryEmbedding.data, section.embedding)
+                             }
+                           })
+          })
+          .sort((a, b) => b.similarity - a.similarity)
+          .slice(0, 5);
+
+
+    // Display results
+    resultsContainer.innerHTML = results
+      .map(result => {
+        // TODO: remove this hacky solution
+        const htmlPath = result.path.replace(".md", ".html");
+        const header = slugify(result.header)
+        const fullPath = `${htmlPath}#${header}`;
+        return `<li class="md-search-result__item">
+                    <a href="/${fullPath}" class="md-search-result__link">
+                        <article class="md-search-result__article md-typeset"/>
+                            <div class="md-search-result__icon md-icon"></div>
+                            <h1>${result.path}</h1>
+                        </article>
+                    </a>
+                    <a href="/${fullPath}" class="md-search-result__link">
+                        <article class="md-search-result__article md-typeset"/>
+                            <h2>${result.header}</h2>
+                            <p>${result.content}</p>
+                            <p>Score: ${result.similarity.toFixed(2)}</p>
+                        </article>
+                    </a>
+                </li>`
+      })
+      .join('');
+  });
 });
 
 function cosineSimilarity(a, b) {
-    const dotProduct = a.reduce((sum, val, i) => sum + val * b[i], 0);
-    const magnitudeA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0));
-    const magnitudeB = Math.sqrt(b.reduce((sum, val) => sum + val * val, 0));
-    return dotProduct / (magnitudeA * magnitudeB);
+  const dotProduct = a.reduce((sum, val, i) => sum + val * b[i], 0);
+  const magnitudeA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0));
+  const magnitudeB = Math.sqrt(b.reduce((sum, val) => sum + val * val, 0));
+  return dotProduct / (magnitudeA * magnitudeB);
 }
 
 function slugify(str) {
