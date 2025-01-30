@@ -57,28 +57,39 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // hijack the search input event
   searchInput.addEventListener('input', async function(e) {
+    const searchContainer = document.querySelector('.md-search-result');
+    const searchMeta = searchContainer.querySelector('.md-search-result__meta');
+    const searchList = searchContainer.querySelector('.md-search-result__list');
+
     if (!isSemanticSearch) {
       // Let the default search handle it
-      console.log("semantic search not enabled, will use default search")
+      console.log("setting default search display back to block");
+      if (searchMeta.style.display === 'none') {
+        searchMeta.style.display = 'block';
+      }
+      if (searchList.style.display === 'none') {
+        searchList.style.display = 'block';
+      }
       return;
     }
 
     console.log("semantic search input event");
 
-    // Clear default search results
-    const defaultResults = document.querySelector('.md-search-result');
-    if (defaultResults) {
-      defaultResults.innerHTML = '<div class="md-search-result__meta"></div><ol class="md-search-result__list" role="list"></ol>';
-    }
+    // clear the meta and list elements
+    console.log("hiding default results dom elements");
+    searchMeta.style.display = 'none';
+    searchList.style.display = 'none';
 
-    // Show semantic search results
-    let resultsContainer = document.querySelector('.md-search-result__list');
+    // build the semantic results container
+    resultsContainer = searchContainer.querySelector('.semantic-search-results');
+    if (!resultsContainer) {
+        const resultsContainer = document.createElement('ol');
+        resultsContainer.classList.add('md-search-result__list');
+        resultsContainer.classList.add('semantic-search-results');
+        searchContainer.appendChild(resultsContainer);
+    }
 
     const query = e.target.value;
-    if (!query) {
-      resultsContainer.innerHTML = '';
-      return;
-    }
 
     // Generate embedding for the query
     const queryEmbedding = await embedder(query, {
@@ -103,6 +114,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           .sort((a, b) => b.similarity - a.similarity)
           .slice(0, 5);
 
+    console.log("found results: ", results);
 
     // Display results
     resultsContainer.innerHTML = results
