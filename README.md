@@ -1,6 +1,6 @@
 # mkdocs Semantic Search Plugin
 
-**Experimental** - this is a proof of concept inspired by 
+**Experimental**
 
 An attempt to provide semantic search results using [transformers.js](https://github.com/huggingface/transformers.js-examples), inspired by [Semantic Finder](https://geo.rocks/semanticfinder/).
 
